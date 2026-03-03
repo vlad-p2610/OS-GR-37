@@ -2,8 +2,9 @@
  * Operating Systems  (2INCO)  Practical Assignment
  * Interprocess Communication
  *
- * STUDENT_NAME_1 (STUDENT_NR_1)
- * STUDENT_NAME_2 (STUDENT_NR_2)
+ * PARICI VLAD ANDREI (2112744)
+ * LOCOMAN CATALIN (STUDENT_NR_2)
+ * BAGRIN VICTOR ()
  *
  * Grading:
  * Your work will be evaluated based on the following criteria:
