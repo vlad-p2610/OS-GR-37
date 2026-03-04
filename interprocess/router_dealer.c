@@ -53,24 +53,28 @@ int main (int argc, char * argv[])
     if(c2d == -1)
     {
         perror("client to router mq creation failed!\n");
+        exit(1);
     }
 
     mqd_t d2w1 = mq_open(dealer2worker1_name, O_CREAT | O_WRONLY | O_EXCL, 0600, &attr);
     if(d2w1 == -1)
     {
         perror("dealer to worker 1 mq creation failed!\n");
+        exit(1);
     }
 
     mqd_t d2w2 = mq_open(dealer2worker2_name, O_CREAT | O_WRONLY | O_EXCL, 0600, &attr);
     if(d2w2 == -1)
     {
         perror("dealer to worker 2 mq creation failed!\n");
+        exit(1);
     }
 
     mqd_t w2d = mq_open(worker2dealer_name, O_CREAT | O_RDONLY | O_EXCL, 0600, &attr);
     if(w2d == -1)
     {
         perror("worker to dealer mq creation failed!\n");
+        exit(1);
     }
     //  * create the child processes (see process_test() and
     //    message_queue_test())
@@ -83,14 +87,38 @@ int main (int argc, char * argv[])
     //  * wait until the client has been stopped (see process_test())
 
     //  * clean up the message queues (see message_queue_test())
-    mq_close(c2d);
-    mq_unlink(c2d);
-    mq_close(d2w1);
-    mq_unlink(d2w1);
-    mq_close(d2w2);
-    mq_unlink(d2w2);
-    mq_close(w2d);
-    mq_unlink(w2d);
+    int rtn_clean;
+    rtn_clean = mq_close(c2d);
+    if (rtn_clean == -1)
+    perror("mq close failed on c2d \n");
+
+    rtn_clean = mq_unlink(client2dealer_name);
+    if (rtn_clean == -1)
+    perror("mq unlink failed on c2d \n");
+
+    rtn_clean = mq_close(d2w1);
+    if (rtn_clean == -1)
+    perror("mq close failed on d2w1 \n");
+
+    rtn_clean = mq_unlink(dealer2worker1_name);
+    if (rtn_clean == -1)
+    perror("mq unlink failed on d2w1 \n");
+
+    rtn_clean = mq_close(d2w2);
+    if (rtn_clean == -1)
+    perror("mq close failed on d2w2 \n");
+
+    rtn_clean = mq_unlink(dealer2worker2_name);
+    if (rtn_clean == -1)
+    perror("mq unlink failed on d2w2 \n");
+
+    rtn_clean = mq_close(w2d);
+    if (rtn_clean == -1)
+    perror("mq close failed on w2d \n");
+
+    rtn_clean = mq_unlink(worker2dealer_name);
+    if (rtn_clean == -1)
+    perror("mq unlink failed on w2d \n");
     // Important notice: make sure that the names of the message queues
     // contain your goup number (to ensure uniqueness during testing)
   
