@@ -30,10 +30,10 @@
 #include "settings.h"  
 #include "messages.h"
 
-char client2dealer_name[30];
-char dealer2worker1_name[30];
-char dealer2worker2_name[30];
-char worker2dealer_name[30];
+char client2dealer_name[30] = "/client2dealer";
+char dealer2worker1_name[30] = "/dealer2worker1";
+char dealer2worker2_name[30] = "/dealer2worker2";
+char worker2dealer_name[30] = "/worker2dealer";
 
 int main (int argc, char * argv[])
 {
@@ -45,14 +45,52 @@ int main (int argc, char * argv[])
   // TODO:
     //  * create the message queues (see message_queue_test() in
     //    interprocess_basic.c)
+    struct mq_attr attr;
+    attr.mq_maxmsg = MQ_MAX_MESSAGES;
+    attr.mq_msgsize = sizeof(ipc_msg_t);
+
+    mqd_t c2d = mq_open(client2dealer_name, O_CREAT | O_RDONLY | O_EXCL, 0600, &attr);
+    if(c2d == -1)
+    {
+        perror("client to router mq creation failed!\n");
+    }
+
+    mqd_t d2w1 = mq_open(dealer2worker1_name, O_CREAT | O_WRONLY | O_EXCL, 0600, &attr);
+    if(d2w1 == -1)
+    {
+        perror("dealer to worker 1 mq creation failed!\n");
+    }
+
+    mqd_t d2w2 = mq_open(dealer2worker2_name, O_CREAT | O_WRONLY | O_EXCL, 0600, &attr);
+    if(d2w2 == -1)
+    {
+        perror("dealer to worker 2 mq creation failed!\n");
+    }
+
+    mqd_t w2d = mq_open(worker2dealer_name, O_CREAT | O_RDONLY | O_EXCL, 0600, &attr);
+    if(w2d == -1)
+    {
+        perror("worker to dealer mq creation failed!\n");
+    }
     //  * create the child processes (see process_test() and
     //    message_queue_test())
+
     //  * read requests from the Req queue and transfer them to the workers
     //    with the Sx queues
-    //  * read answers from workers in the Rep queue and print them
-    //  * wait until the client has been stopped (see process_test())
-    //  * clean up the message queues (see message_queue_test())
 
+    //  * read answers from workers in the Rep queue and print them
+
+    //  * wait until the client has been stopped (see process_test())
+
+    //  * clean up the message queues (see message_queue_test())
+    mq_close(c2d);
+    mq_unlink(c2d);
+    mq_close(d2w1);
+    mq_unlink(d2w1);
+    mq_close(d2w2);
+    mq_unlink(d2w2);
+    mq_close(w2d);
+    mq_unlink(w2d);
     // Important notice: make sure that the names of the message queues
     // contain your goup number (to ensure uniqueness during testing)
   
