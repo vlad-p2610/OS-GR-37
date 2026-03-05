@@ -30,10 +30,12 @@
 #include "settings.h"  
 #include "messages.h"
 
-char client2dealer_name[30] = "/Req_queue_";
-char dealer2worker1_name[30] = "/S1_queue_";
-char dealer2worker2_name[30] = "/S2_queue_";
-char worker2dealer_name[30] = "/Rsp_queue_";
+char client2dealer_name[30];
+char dealer2worker1_name[30];
+char dealer2worker2_name[30];
+char worker2dealer_name[30];
+
+#define STUDENT_NAME "Group_37"
 
 int main (int argc, char * argv[])
 {
@@ -45,6 +47,12 @@ int main (int argc, char * argv[])
   // TODO:
     //  * create the message queues (see message_queue_test() in
     //    interprocess_basic.c)
+    
+    sprintf (client2dealer_name, "/Req_queue_%s_%d", STUDENT_NAME, getpid());
+    sprintf (dealer2worker1_name, "/S1_queue_%s_%d", STUDENT_NAME, getpid());
+    sprintf (dealer2worker2_name, "/S2_queue_%s_%d", STUDENT_NAME, getpid());
+    sprintf (worker2dealer_name, "/Rsp_queue_%s_%d", STUDENT_NAME, getpid());
+
     struct mq_attr attr;
     attr.mq_maxmsg = MQ_MAX_MESSAGES;
     attr.mq_msgsize = sizeof(ipc_msg_t);
