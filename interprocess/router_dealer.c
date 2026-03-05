@@ -161,7 +161,14 @@ int main (int argc, char * argv[])
    
     pid_t terminated = waitpid(client_id, &status, WNOHANG);
     int RspLeft = 0;
-    while(terminated != client_id || ((mq_receive(c2d, (char *) &clientReq, sizeof (clientReq), NULL) != -1))) {
+    bool queueNotEmpty;
+    if ((mq_receive(c2d, (char *) &clientReq, sizeof (clientReq), NULL) != -1)) {
+          queueNotEmpty = true;
+    } else {
+      queueNotEmpty = false;
+    }
+    //client is not dead and the queue is not empty
+    while(terminated != client_id || queueNotEmpty) {
         //  * read answers from workers in the Rep queue and print them
 
         //this is non blocking. the workers will not need to busy wait because router can empty more messages than it forwards the workers.
@@ -169,7 +176,7 @@ int main (int argc, char * argv[])
           printf("%d -> %d\n", servResp.job_id, servResp.result);
           RspLeft--;
         }
-        if(dealerReq.job_id != clientReq.job_id) {
+        if(queueNotEmpty) {
           dealerReq = clientReq;
           dealerReq.kind = IPC_MSG_JOB;
 
@@ -191,6 +198,10 @@ int main (int argc, char * argv[])
           perror("waitpid on client failed");
           terminated = client_id; //so it can clean the services and mqs
         }
+        if ((mq_receive(c2d, (char *) &clientReq, sizeof (clientReq), NULL) != -1)) {
+          queueNotEmpty = true;
+        } else queueNotEmpty = false;
+        
     }
 
     //print the last responses
