@@ -3,8 +3,8 @@
  * Interprocess Communication
  *
  * PARICI VLAD ANDREI (2112744)
- * LOCOMAN CATALIN (STUDENT_NR_2)
- * BAGRIN VICTOR ()
+ * Catalin Locoman (2128179)
+ * Victor Bagrin (2011204)
  *
  * Grading:
  * Your work will be evaluated based on the following criteria:
@@ -169,22 +169,22 @@ int main (int argc, char * argv[])
           printf("%d -> %d\n", servResp.job_id, servResp.result);
           RspLeft--;
         }
+        if(dealerReq.job_id != clientReq.job_id) {
+          dealerReq = clientReq;
+          dealerReq.kind = IPC_MSG_JOB;
 
-        dealerReq = clientReq;
-        dealerReq.kind = IPC_MSG_JOB;
-
-        if (dealerReq.service_id == 1) {
-          if (mq_send(d2w1, (char *) &dealerReq, sizeof(dealerReq), 0) == -1) {
-            perror("dealer: mq to w1");
-          } else 
-          RspLeft++;
-        } else {
-          if (mq_send(d2w2, (char *) &dealerReq, sizeof(dealerReq), 0) == -1) {
-            perror("dealer: mq to w2");
-          } else 
-          RspLeft++;
+          if (dealerReq.service_id == 1) {
+            if (mq_send(d2w1, (char *) &dealerReq, sizeof(dealerReq), 0) == -1) {
+              perror("dealer: mq to w1");
+            } else 
+            RspLeft++;
+          } else {
+            if (mq_send(d2w2, (char *) &dealerReq, sizeof(dealerReq), 0) == -1) {
+              perror("dealer: mq to w2");
+            } else 
+            RspLeft++;
+          }
         }
-        
         //  * wait until the client has been stopped (see process_test())
         terminated = waitpid(client_id, &status, WNOHANG);
         if (terminated == -1) {

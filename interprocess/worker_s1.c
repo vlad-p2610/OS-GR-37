@@ -2,6 +2,8 @@
  * Operating Systems  (2INCO)  Practical Assignment
  * Interprocess Communication
  *
+ * PARICI VLAD ANDREI (2112744)
+ * Catalin Locoman (2128179)
  * Victor Bagrin (2011204)
  *
  *
