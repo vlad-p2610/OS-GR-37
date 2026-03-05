@@ -30,10 +30,10 @@
 #include "settings.h"  
 #include "messages.h"
 
-char client2dealer_name[30] = "/client2dealer";
-char dealer2worker1_name[30] = "/dealer2worker1";
-char dealer2worker2_name[30] = "/dealer2worker2";
-char worker2dealer_name[30] = "/worker2dealer";
+char client2dealer_name[30] = "/Req_queue_";
+char dealer2worker1_name[30] = "/S1_queue_";
+char dealer2worker2_name[30] = "/S2_queue_";
+char worker2dealer_name[30] = "/Rsp_queue_";
 
 int main (int argc, char * argv[])
 {
@@ -78,7 +78,71 @@ int main (int argc, char * argv[])
     }
     //  * create the child processes (see process_test() and
     //    message_queue_test())
+    pid_t client_id, s1_id[N_SERV1], s2_id[N_SERV2];      /* Process ID from fork() */
 
+    printf ("parent pid:%d\n", getpid());
+    client_id = fork();
+    if (client_id < 0)
+    {
+        perror("fork() for client failed");
+        exit (1);
+    }
+    else
+    {
+        if (client_id == 0)
+        {
+            printf ("client  pid:%d\n", getpid());
+            fflush(stdout);
+            execlp ("./client", "client", client2dealer_name, NULL);
+
+            // we should never arrive here...
+            perror ("execlp() failed");
+            exit(1);
+        }
+    }
+    for (int i = 0; i < N_SERV1; i++) {
+      s1_id[i] = fork();
+      if (s1_id[i] < 0)
+      {
+          fprintf(stderr, "fork() for s1[%d] failed\n", i);
+          exit (1);
+      }
+      else
+      {
+        if (s1_id[i] == 0)
+        {
+            printf ("s1[%d]  pid:%d\n", i, getpid());
+            fflush(stdout);
+            execlp ("./worker_s1", "worker_s1", dealer2worker1_name, worker2dealer_name, NULL);
+
+            // we should never arrive here...
+            perror ("execlp() failed");
+            exit(1);
+        }
+      }
+    }
+
+    for (int i = 0; i < N_SERV2; i++) {
+      s2_id[i] = fork();
+      if (s2_id[i] < 0)
+      {
+          fprintf(stderr, "fork() for s2[%d] failed\n", i);
+          exit (1);
+      }
+      else
+      {
+        if (s2_id[i] == 0)
+        {
+            printf ("s2[%d]  pid:%d\n", i, getpid());
+            fflush(stdout);
+            execlp ("./worker_s2", "worker_s2", dealer2worker2_name, worker2dealer_name, NULL);
+
+            // we should never arrive here...
+            perror ("execlp() failed");
+            exit(1);
+        }
+      }
+    }
     //  * read requests from the Req queue and transfer them to the workers
     //    with the Sx queues
 
