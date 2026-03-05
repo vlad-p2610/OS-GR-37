@@ -80,12 +80,30 @@ int main (int argc, char * argv[])
         msg.result     = 0;
         msg._reserved  = 0;
 
-        if (mq_send(req_mq, (const char *)&msg, sizeof(ipc_msg_t), 0) == -1) {
-            perror("client: mq_send(req)");
-            mq_close(req_mq);
-            return 1;
-        }
+        //only workers are prohibited from busy wait
+        ssize_t n;
+        do {
+             n = mq_send(req_mq, (const char *)&msg, sizeof(ipc_msg_t), 0);
+             if(errno != EAGAIN) {
+                perror("client: sending");
+             }
+        } while (n == -1);
     }
+
+    // //termination signal
+    // ipc_msg_t msg;
+    //     msg.kind       = IPC_MSG_TERM;
+    //     msg.job_id     = 0;
+    //     msg.service_id = 0;
+    //     msg.data       = 0;
+    //     msg.result     = 0;
+    //     msg._reserved  = 0;
+
+    // if (mq_send(req_mq, (const char *)&msg, sizeof(ipc_msg_t), 0) == -1) {
+    //         perror("client: mq_send(req)");
+    //         mq_close(req_mq);
+    //         return 1;
+    // }
 
     if (mq_close(req_mq) == -1) {
         perror("client: mq_close(req)");

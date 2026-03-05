@@ -57,7 +57,7 @@ int main (int argc, char * argv[])
     attr.mq_maxmsg = MQ_MAX_MESSAGES;
     attr.mq_msgsize = sizeof(ipc_msg_t);
 
-    mqd_t c2d = mq_open(client2dealer_name, O_CREAT | O_RDONLY | O_EXCL, 0600, &attr);
+    mqd_t c2d = mq_open(client2dealer_name, O_CREAT | O_RDONLY | O_EXCL | O_NONBLOCK, 0600, &attr);
     if(c2d == -1)
     {
         perror("client to router mq creation failed!\n");
@@ -78,7 +78,7 @@ int main (int argc, char * argv[])
         exit(1);
     }
 
-    mqd_t w2d = mq_open(worker2dealer_name, O_CREAT | O_RDONLY | O_EXCL, 0600, &attr);
+    mqd_t w2d = mq_open(worker2dealer_name, O_CREAT | O_RDONLY | O_EXCL | O_NONBLOCK, 0600, &attr);
     if(w2d == -1)
     {
         perror("worker to dealer mq creation failed!\n");
@@ -153,32 +153,36 @@ int main (int argc, char * argv[])
     }
     //  * read requests from the Req queue and transfer them to the workers
     //    with the Sx queues
-    pid_t terminated = (pid_t)0;
-    int status;
-    //the way it works is that if i can't push a request to services, then I 
-    //don't but i will try to pull from rsp. I only pull a new message from the client
-    //if I sent the current one.
     
-    bool needNewReq = true; 
-    while(terminated != client_id) {
+    int status;
+    ipc_msg_t clientReq;
+    ipc_msg_t dealerReq;
+    ipc_msg_t servResp;
+   
+    pid_t terminated = waitpid(client_id, &status, WNOHANG);
+    int RspLeft = 0;
+    while(terminated != client_id || ((mq_receive(c2d, (char *) &clientReq, sizeof (clientReq), NULL) != -1))) {
         //  * read answers from workers in the Rep queue and print them
-        ipc_msg_t clientReq;
-        ipc_msg_t dealerReq;
-        ipc_msg_t servResp;
 
-        if (needNewReq) {  
-          ssize_t n = mq_receive (c2d, (char *) &clientReq, sizeof (clientReq), NULL);
-          if (n == -1) perror("mqreceive error in router");
-        }
-        
-        if (clientReq.service_id == 1) {
-          ssize_t n = mq_send (d2w1, (char *) &dealerReq, sizeof (dealerReq), 0);
-          if (n == -1) perror("mqsend error in router for s1");
+        //this is non blocking. the workers will not need to busy wait because router can empty more messages than it forwards the workers.
+        while (mq_receive(w2d, (char *) &servResp, sizeof (servResp), NULL) != -1) {
+          printf("%d -> %d\n", servResp.job_id, servResp.result);
+          RspLeft--;
         }
 
-        if (clientReq.service_id == ) {
-          ssize_t n = mq_send (d2w2, (char *) &dealerReq, sizeof (dealerReq), 0);
-          if (n == -1) perror("mqsend error in router for s2");
+        dealerReq = clientReq;
+        dealerReq.kind = IPC_MSG_JOB;
+
+        if (dealerReq.service_id == 1) {
+          if (mq_send(d2w1, (char *) &dealerReq, sizeof(dealerReq), 0) == -1) {
+            perror("dealer: mq to w1");
+          } else 
+          RspLeft++;
+        } else {
+          if (mq_send(d2w2, (char *) &dealerReq, sizeof(dealerReq), 0) == -1) {
+            perror("dealer: mq to w2");
+          } else 
+          RspLeft++;
         }
         
         //  * wait until the client has been stopped (see process_test())
@@ -189,12 +193,47 @@ int main (int argc, char * argv[])
         }
     }
 
-    //send services the death pill and print anything in resp queeu
-    int alive1 = N_SERV1;
-    int alive2 = N_SERV2;
-    while (alive1 ) {
-
+    //print the last responses
+    while(RspLeft != 0) {
+      if(mq_receive(w2d, (char *) &servResp, sizeof (servResp), NULL) == -1)
+        perror("router: rsp queue");
+      else {
+        printf("%d -> %d\n", servResp.job_id, servResp.result);
+        RspLeft--;
+        }
     }
+
+    for (int i = 0; i < N_SERV1; i++) {
+      dealerReq.kind = IPC_MSG_TERM;
+      dealerReq.data = 0;
+      dealerReq.job_id = 0;
+      dealerReq.result = 0;
+      dealerReq.service_id = 0;
+      dealerReq._reserved = 0;
+
+      if (mq_send(d2w1, (char *) &dealerReq, sizeof(dealerReq), 0) == -1)
+        perror("dealer: sending term to w1");
+    }
+
+    for (int i = 0; i < N_SERV2; i++) {
+      dealerReq.kind = IPC_MSG_TERM;
+      dealerReq.data = 0;
+      dealerReq.job_id = 0;
+      dealerReq.result = 0;
+      dealerReq.service_id = 0;
+      dealerReq._reserved = 0;
+
+      if (mq_send(d2w2, (char *) &dealerReq, sizeof(dealerReq), 0) == -1)
+        perror("dealer: sending term to w2");
+    }
+
+    for(int i=0;i<N_SERV1;i++)
+      if(waitpid(s1_id[i], NULL, 0) == -1)
+        perror("dealer: wait failed on worker s1");
+
+    for(int i=0;i<N_SERV2;i++)
+      if(waitpid(s2_id[i], NULL, 0) == -1)
+        perror("dealer: wait failed on worker s2");
 
     //  * clean up the message queues (see message_queue_test())
     int rtn_clean;
