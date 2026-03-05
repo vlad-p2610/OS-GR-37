@@ -155,24 +155,32 @@ int main (int argc, char * argv[])
     //    with the Sx queues
     pid_t terminated = (pid_t)0;
     int status;
+    //the way it works is that if i can't push a request to services, then I 
+    //don't but i will try to pull from rsp. I only pull a new message from the client
+    //if I sent the current one.
+    
+    bool needNewReq = true; 
     while(terminated != client_id) {
         //  * read answers from workers in the Rep queue and print them
         ipc_msg_t clientReq;
         ipc_msg_t dealerReq;
         ipc_msg_t servResp;
 
-        ssize_t n = mq_receive (c2d, (char *) &clientReq, sizeof (clientReq), NULL);
-        if (n == -1) perror("mqreceive error in router");
-
+        if (needNewReq) {  
+          ssize_t n = mq_receive (c2d, (char *) &clientReq, sizeof (clientReq), NULL);
+          if (n == -1) perror("mqreceive error in router");
+        }
+        
         if (clientReq.service_id == 1) {
-          n = mq_send (d2w1, (char *) &dealerReq, sizeof (dealerReq), 0);
+          ssize_t n = mq_send (d2w1, (char *) &dealerReq, sizeof (dealerReq), 0);
           if (n == -1) perror("mqsend error in router for s1");
         }
 
-        if (clientReq.service_id == 12 {
-          n = mq_send (d2w2, (char *) &dealerReq, sizeof (dealerReq), 0);
+        if (clientReq.service_id == ) {
+          ssize_t n = mq_send (d2w2, (char *) &dealerReq, sizeof (dealerReq), 0);
           if (n == -1) perror("mqsend error in router for s2");
         }
+        
         //  * wait until the client has been stopped (see process_test())
         terminated = waitpid(client_id, &status, WNOHANG);
         if (terminated == -1) {
@@ -182,8 +190,9 @@ int main (int argc, char * argv[])
     }
 
     //send services the death pill and print anything in resp queeu
-    int alive = N_SERV1 + N_SERV2;
-    while (alive > 0) {
+    int alive1 = N_SERV1;
+    int alive2 = N_SERV2;
+    while (alive1 ) {
 
     }
 
