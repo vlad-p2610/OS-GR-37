@@ -33,25 +33,23 @@ static Arrival curr_arrivals[4][3][20];
 static sem_t semaphores[4][3];
 
 /*
- * 3x3-grid mutex design that we decided to implement:
+ * 7-mutex conflict design
  *
- * q1 q2 q3
- * q4 q5 q6
- * q7 q8 q9
- *
- * We store them in a 0-based array:
- * q[0] = q1, q[1] = q2, ..., q[8] = q9
+ * Mutex 0 (South Merge):           { NORTH-STRAIGHT, EAST-LEFT, WEST-RIGHT }
+ * Mutex 1 (West Merge):            { NORTH-RIGHT, EAST-STRAIGHT, SOUTH-LEFT }
+ * Mutex 2 (North Merge):           { EAST-RIGHT, SOUTH-STRAIGHT, WEST-LEFT }
+ * Mutex 3 (Center-South Crossing): { NORTH-STRAIGHT, EAST-LEFT, SOUTH-LEFT }
+ * Mutex 4 (Grand Central):         { NORTH-STRAIGHT, EAST-STRAIGHT, SOUTH-LEFT, WEST-LEFT }
+ * Mutex 5 (Center-North Crossing): { EAST-STRAIGHT, SOUTH-STRAIGHT, WEST-LEFT }
+ * Mutex 6 (Center-East Crossing):  { EAST-LEFT, SOUTH-STRAIGHT }
  */
+static pthread_mutex_t conflict_mutexes[7];
 
-static pthread_mutex_t grid_mutexes[9];
-
-
-// Leaving the same as for the basic implementation
 typedef struct
 {
-  int side;
-  int direction;
-  struct timespec end_time;
+    int side;
+    int direction;
+    struct timespec end_time;
 } LightArgs;
 
 /*
@@ -62,53 +60,41 @@ typedef struct
  */
 static void* supply_arrivals()
 {
-  int num_curr_arrivals[4][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+    int num_curr_arrivals[4][3] = {
+        {0, 0, 0},
+        {0, 0, 0},
+        {0, 0, 0},
+        {0, 0, 0}
+    };
 
-  // for every arrival in the list
-  for (int i = 0; i < sizeof(input_arrivals)/sizeof(Arrival); i++)
-  {
-    // get the next arrival in the list
-    Arrival arrival = input_arrivals[i];
-    // wait until this arrival is supposed to arrive
-    sleep_until_arrival(arrival.time);
-    // store the new arrival in curr_arrivals
-    curr_arrivals[arrival.side][arrival.direction][num_curr_arrivals[arrival.side][arrival.direction]] = arrival;
-    num_curr_arrivals[arrival.side][arrival.direction] += 1;
-    // increment the semaphore for the traffic light that the arrival is for
-    sem_post(&semaphores[arrival.side][arrival.direction]);
-  }
-  return 0;
+    for (int i = 0; i < (int)(sizeof(input_arrivals) / sizeof(Arrival)); i++)
+    {
+        Arrival arrival = input_arrivals[i];
+
+        sleep_until_arrival(arrival.time);
+
+        curr_arrivals[arrival.side][arrival.direction]
+                     [num_curr_arrivals[arrival.side][arrival.direction]] = arrival;
+        num_curr_arrivals[arrival.side][arrival.direction] += 1;
+
+        sem_post(&semaphores[arrival.side][arrival.direction]);
+    }
+
+    return NULL;
 }
 
 /*
- * get_required_cells()
+ * get_required_mutexes()
  *
- * Fills cells[] with the q-cells needed by a movement and returns the count.
+ * Returns in mutexes[] the list of mutex IDs required by the path
+ * corresponding to (side, direction), and returns the number of mutexes.
  *
- * Cell numbers are stored 0-based:
- * q1 -> 0, q2 -> 1, ..., q9 -> 8
+ * The mutex IDs are always stored in strictly increasing order.
+ * This lets all threads lock them in the same global order, which prevents deadlock.
  *
- * Your 3x3-grid design:
- *
- * NORTH, RIGHT      -> q1
- * NORTH, STRAIGHT   -> q2, q5, q7, q8
- *
- * EAST, RIGHT       -> q3
- * EAST, STRAIGHT    -> q1, q4, q5, q6
- * EAST, LEFT        -> q7, q8, q9
- *
- * SOUTH, STRAIGHT   -> q3, q6, q9
- * SOUTH, LEFT       -> q1, q2, q5, q8
- *
- * WEST, RIGHT       -> q7
- * WEST, LEFT        -> q3, q4, q5, q6
- *
- * For movements that do not exist in the pictured intersection
- * (NORTH, LEFT), (SOUTH, RIGHT), (WEST, STRAIGHT),
- * we use a conservative fallback: lock the whole grid.
- * That preserves safety if such an input ever appears unexpectedly.
+ * For invalid/not pictured movements, we conservatively lock all mutexes.
  */
-static int get_required_cells(int side, int direction, int cells[9])
+static int get_required_mutexes(int side, int direction, int mutexes[7])
 {
     int count = 0;
 
@@ -117,85 +103,90 @@ static int get_required_cells(int side, int direction, int cells[9])
         case NORTH:
             if (direction == RIGHT)
             {
-                cells[count++] = 0;              /* q1 */
+                /* NORTH-RIGHT -> {1} */
+                mutexes[count++] = 1;
             }
             else if (direction == STRAIGHT)
             {
-                cells[count++] = 1;              /* q2 */
-                cells[count++] = 4;              /* q5 */
-                cells[count++] = 6;              /* q7 */
-                cells[count++] = 7;              /* q8 */
+                /* NORTH-STRAIGHT -> {0, 3, 4} */
+                mutexes[count++] = 0;
+                mutexes[count++] = 3;
+                mutexes[count++] = 4;
             }
             else
             {
-                /* NORTH, LEFT -> conservative fallback */
-                for (int i = 0; i < 9; i++) cells[count++] = i;
+                /* NORTH-LEFT invalid -> conservative fallback */
+                for (int i = 0; i < 7; i++) mutexes[count++] = i;
             }
             break;
 
         case EAST:
             if (direction == RIGHT)
             {
-                cells[count++] = 2;              /* q3 */
+                /* EAST-RIGHT -> {2} */
+                mutexes[count++] = 2;
             }
             else if (direction == STRAIGHT)
             {
-                cells[count++] = 0;              /* q1 */
-                cells[count++] = 3;              /* q4 */
-                cells[count++] = 4;              /* q5 */
-                cells[count++] = 5;              /* q6 */
+                /* EAST-STRAIGHT -> {1, 4, 5} */
+                mutexes[count++] = 1;
+                mutexes[count++] = 4;
+                mutexes[count++] = 5;
             }
             else if (direction == LEFT)
             {
-                cells[count++] = 6;              /* q7 */
-                cells[count++] = 7;              /* q8 */
-                cells[count++] = 8;              /* q9 */
+                /* EAST-LEFT -> {0, 3, 6} */
+                mutexes[count++] = 0;
+                mutexes[count++] = 3;
+                mutexes[count++] = 6;
             }
             break;
 
         case SOUTH:
             if (direction == STRAIGHT)
             {
-                cells[count++] = 2;              /* q3 */
-                cells[count++] = 5;              /* q6 */
-                cells[count++] = 8;              /* q9 */
+                /* SOUTH-STRAIGHT -> {2, 5, 6} */
+                mutexes[count++] = 2;
+                mutexes[count++] = 5;
+                mutexes[count++] = 6;
             }
             else if (direction == LEFT)
             {
-                cells[count++] = 0;              /* q1 */
-                cells[count++] = 1;              /* q2 */
-                cells[count++] = 4;              /* q5 */
-                cells[count++] = 7;              /* q8 */
+                /* SOUTH-LEFT -> {1, 3, 4} */
+                mutexes[count++] = 1;
+                mutexes[count++] = 3;
+                mutexes[count++] = 4;
             }
             else
             {
-                /* SOUTH, RIGHT -> conservative fallback */
-                for (int i = 0; i < 9; i++) cells[count++] = i;
+                /* SOUTH-RIGHT invalid -> conservative fallback */
+                for (int i = 0; i < 7; i++) mutexes[count++] = i;
             }
             break;
 
         case WEST:
             if (direction == RIGHT)
             {
-                cells[count++] = 6;              /* q7 */
+                /* WEST-RIGHT -> {0} */
+                mutexes[count++] = 0;
             }
             else if (direction == LEFT)
             {
-                cells[count++] = 2;              /* q3 */
-                cells[count++] = 3;              /* q4 */
-                cells[count++] = 4;              /* q5 */
-                cells[count++] = 5;              /* q6 */
+                /* WEST-LEFT -> {2, 4, 5} */
+                mutexes[count++] = 2;
+                mutexes[count++] = 4;
+                mutexes[count++] = 5;
             }
             else
             {
-                /* WEST, STRAIGHT -> conservative fallback */
-                for (int i = 0; i < 9; i++) cells[count++] = i;
+                /* WEST-STRAIGHT invalid -> conservative fallback */
+                for (int i = 0; i < 7; i++) mutexes[count++] = i;
             }
             break;
 
         default:
             /* Defensive fallback */
-            for (int i = 0; i < 9; i++) cells[count++] = i;
+            for (int i = 0; i < 7; i++) mutexes[count++] = i;
             break;
     }
 
@@ -203,29 +194,28 @@ static int get_required_cells(int side, int direction, int cells[9])
 }
 
 /*
- * lock_required_cells()
+ * lock_required_mutexes()
  *
- * Locks all needed cells in ascending order.
- * This fixed global order avoids deadlock.
+ * Locks all required mutexes in ascending order.
  */
-static void lock_required_cells(const int cells[], int count)
+static void lock_required_mutexes(const int mutexes[], int count)
 {
     for (int i = 0; i < count; i++)
     {
-        pthread_mutex_lock(&grid_mutexes[cells[i]]);
+        pthread_mutex_lock(&conflict_mutexes[mutexes[i]]);
     }
 }
 
 /*
- * unlock_required_cells()
+ * unlock_required_mutexes()
  *
- * Unlocks in reverse order.
+ * Unlocks all required mutexes in reverse order.
  */
-static void unlock_required_cells(const int cells[], int count)
+static void unlock_required_mutexes(const int mutexes[], int count)
 {
     for (int i = count - 1; i >= 0; i--)
     {
-        pthread_mutex_unlock(&grid_mutexes[cells[i]]);
+        pthread_mutex_unlock(&conflict_mutexes[mutexes[i]]);
     }
 }
 
@@ -263,10 +253,10 @@ static void* manage_light(void* arg)
         Arrival arrival = curr_arrivals[side][direction][next_arrival];
         next_arrival++;
 
-        int cells[9];
-        int cell_count = get_required_cells(side, direction, cells);
+        int mutexes[7];
+        int mutex_count = get_required_mutexes(side, direction, mutexes);
 
-        lock_required_cells(cells, cell_count);
+        lock_required_mutexes(mutexes, mutex_count);
 
         printf("traffic light %d %d turns green at time %d for car %d\n",
                side, direction, get_time_passed(), arrival.id);
@@ -278,7 +268,7 @@ static void* manage_light(void* arg)
                side, direction, get_time_passed());
         fflush(stdout);
 
-        unlock_required_cells(cells, cell_count);
+        unlock_required_mutexes(mutexes, mutex_count);
     }
 
     return NULL;
@@ -303,10 +293,10 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* Initialize 3x3-grid mutexes */
-    for (int i = 0; i < 9; i++)
+    /* Initialize conflict mutexes */
+    for (int i = 0; i < 7; i++)
     {
-        pthread_mutex_init(&grid_mutexes[i], NULL);
+        pthread_mutex_init(&conflict_mutexes[i], NULL);
     }
 
     start_time();
@@ -348,9 +338,9 @@ int main(int argc, char *argv[])
         }
     }
 
-    for (int i = 0; i < 9; i++)
+    for (int i = 0; i < 7; i++)
     {
-        pthread_mutex_destroy(&grid_mutexes[i]);
+        pthread_mutex_destroy(&conflict_mutexes[i]);
     }
 
     return 0;
