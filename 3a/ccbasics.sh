@@ -5,7 +5,7 @@
 #
 CC=gcc
 #
-CFLAGS="-Wall -Wextra"
+CFLAGS="-Wall"
 #
 LIBS="-lpthread"
 #
@@ -24,4 +24,4 @@ LIBS="-lpthread"
 #  valgrind : debugging memory and profiling
 #  gprof : call graph execution profiler
 #
-$CC $CFLAGS -o prodcons prodcons.c $LIBS && ./prodcons
+$CC $CFLAGS -o condition condition_basics.c $LIBS && ./condition
