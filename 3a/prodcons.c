@@ -36,6 +36,8 @@ int next_expected = 0; // which one should come next ascending order
 static buffer_mutex = PTHREAD_MUTEX_INITIALIZER; //protects buffer and the 3 counters
 static pthread_cond_t can_produce = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t can_consume = PTHREAD_COND_INITIALIZER;
+pthread_t prods[NROF_PRODUCERS];
+pthread_t cons;
 
 
 /* producer thread */
@@ -49,13 +51,17 @@ producer (void * arg)
         rsleep (100);	// simulating all kind of activities...
 	
 		rtnval = pthread_mutex_lock (&buffer_mutex);
-		if(rtnval == 0) {
+		if(rtnval != 0) {
 			perror ("mutex lock failed in prod");
             exit (1);
 		}
 
 		while (count + 1 > BUFFER_SIZE || item != next_expected) {
-			pthread_cond_wait (&can_produce, &buffer_mutex);
+			rtnval = pthread_cond_wait (&can_produce, &buffer_mutex);
+			if(rtnval != 0) {
+				perror ("wait failed in prod");
+            	exit (1);
+			}
 		}
 		
 		buffer[in % BUFFER_SIZE] = item;
@@ -64,13 +70,13 @@ producer (void * arg)
 		count++;
         
 		rtnval = pthread_cond_signal (&can_consume);
-		if(rtnval == 0) {
+		if(rtnval != 0) {
 			perror ("signal failed in prod");
             exit (1);
 		}
 
 		rtnval = pthread_mutex_unlock (&buffer_mutex);
-		if(rtnval == 0) {
+		if(rtnval != 0) {
 			perror ("mutex unlock failed in prod");
             exit (1);
 		}
@@ -108,7 +114,35 @@ int main (void)
     // TODO: 
     // * startup the producer threads and the consumer thread
     // * wait until all threads are finished  
-    
+	int rtnval;
+    rtnval = pthread_create (&cons, NULL, cons, NULL);
+	if(rtnval != 0) {
+		perror ("create consumer failed");
+        exit (1);
+	}
+
+	for (int i = 0; i < NROF_PRODUCERS; i++) {
+		rtnval = pthread_create (&prods[i], NULL, producer, NULL);
+		if(rtnval != 0) {
+			perror ("create prod failed");
+        	exit (1);
+		}
+	}
+
+	rtnval = pthread_join (cons, NULL);
+	if(rtnval != 0) {
+		perror ("join consumer failed");
+        exit (1);
+	}
+
+	for (int i = 0; i < NROF_PRODUCERS; i++) {
+		rtnval = pthread_join (prods[i], NULL);
+		if(rtnval != 0) {
+			perror ("join prod failed");
+        	exit (1);
+		}
+	}
+
     return (0);
 }
 
