@@ -38,7 +38,7 @@ static pthread_cond_t can_produce = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t can_consume = PTHREAD_COND_INITIALIZER;
 pthread_t prods[NROF_PRODUCERS];
 pthread_t cons;
-
+int signals = 0;
 
 /* producer thread */
 static void * 
@@ -69,10 +69,14 @@ producer (void * arg)
 		next_expected++;
 		count++;
         
-		rtnval = pthread_cond_signal (&can_consume);
-		if(rtnval != 0) {
-			perror ("signal failed in prod");
-            exit (1);
+		if (count == 1) { //dont signal uninterested threads - consumer only waiting if buffer was empty
+			rtnval = pthread_cond_signal (&can_consume);
+			if(rtnval != 0) {
+				perror ("signal failed in prod");
+				exit (1);
+			}
+			signals++;
+			fprintf (stderr, "%d", signals);
 		}
 
 		rtnval = pthread_mutex_unlock (&buffer_mutex);
@@ -113,11 +117,13 @@ consumer (void * arg)
 
 		printf ("%d\n", item);
 
-		rtnval = pthread_cond_broadcast (&can_produce);
+		rtnval = pthread_cond_broadcast (&can_produce); //always an interested producer - the one that has the next item
 		if(rtnval != 0) {
 			perror ("signal failed in cons");
             exit (1);
 		}
+		signals++;
+		fprintf (stderr, "%d", signals);
 
 		rtnval = pthread_mutex_unlock (&buffer_mutex);
 		if(rtnval != 0) {
