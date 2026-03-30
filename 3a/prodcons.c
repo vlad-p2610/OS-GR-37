@@ -2,8 +2,9 @@
  * Operating Systems  (2INC0)  Practical Assignment.
  * Condition Variables Application.
  *
- * STUDENT_NAME_1 (STUDENT_NR_1)
- * STUDENT_NAME_2 (STUDENT_NR_2)
+ * PARICI_VLAD (2112744)
+ * LOCOMAN_CATALIN (2128179)
+ * BAGRIN_VICTOR (2011204)
  *
  * Grading:
  * Students who hand in clean code that fully satisfies the minimum requirements will get an 8. 
@@ -26,30 +27,55 @@ static ITEM buffer[BUFFER_SIZE];
 static void rsleep (int t);	    // already implemented (see below)
 static ITEM get_next_item (void);   // already implemented (see below)
 
+// ours
+int count = 0;		   // items in buffer
+//we will implement a circular buffer so we dont have to shift it
+int in = 0;			   // how many items put in buffer so far
+int out = 0;		   // how many items pulled out of buffer so far
+int next_expected = 0; // which one should come next ascending order
+static buffer_mutex = PTHREAD_MUTEX_INITIALIZER; //protects buffer and the 3 counters
+static pthread_cond_t can_produce = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t can_consume = PTHREAD_COND_INITIALIZER;
+
 
 /* producer thread */
 static void * 
 producer (void * arg)
-{
-    while (true /* TODO: not all items produced */)
+{	
+	int rtnval;
+	ITEM item = get_next_item();
+    while (item != NROF_ITEMS) /* TODO: not all items produced */
     {
-        // TODO: 
-        // * get the new item
-		
         rsleep (100);	// simulating all kind of activities...
+	
+		rtnval = pthread_mutex_lock (&buffer_mutex);
+		if(rtnval == 0) {
+			perror ("mutex lock failed in prod");
+            exit (1);
+		}
+
+		while (count + 1 > BUFFER_SIZE || item != next_expected) {
+			pthread_cond_wait (&can_produce, &buffer_mutex);
+		}
 		
-	// TODO:
-	      // * put the item into buffer[]
-	//
-        // follow this pseudocode (according to the ConditionSynchronization lecture):
-        //      mutex-lock;
-        //      while not condition-for-this-producer
-        //          wait-cv;
-        //      critical-section;
-        //      possible-cv-signals;
-        //      mutex-unlock;
-        //
-        // (see condition_test() in condition_basics.c how to use condition variables)
+		buffer[in % BUFFER_SIZE] = item;
+		in++;
+		next_expected++;
+		count++;
+        
+		rtnval = pthread_cond_signal (&can_consume);
+		if(rtnval == 0) {
+			perror ("signal failed in prod");
+            exit (1);
+		}
+
+		rtnval = pthread_mutex_unlock (&buffer_mutex);
+		if(rtnval == 0) {
+			perror ("mutex unlock failed in prod");
+            exit (1);
+		}
+
+		item = get_next_item();
     }
 	return (NULL);
 }
@@ -58,7 +84,7 @@ producer (void * arg)
 static void * 
 consumer (void * arg)
 {
-    while (true /* TODO: not all items retrieved from buffer[] */)
+    while (true /* TODO: not all items retrieved from buffer[] */) //vlad: last item printed != NROF_ITEMS - 1
     {
         // TODO: 
 	      // * get the next item from buffer[]
