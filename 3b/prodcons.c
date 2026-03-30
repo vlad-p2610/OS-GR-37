@@ -39,6 +39,7 @@ static pthread_cond_t can_consume = PTHREAD_COND_INITIALIZER;
 pthread_t prods[NROF_PRODUCERS];
 pthread_t cons;
 int signals = 0;
+static ITEM waiters[NROF_PRODUCERS];
 
 /* producer thread */
 static void * 
@@ -76,7 +77,7 @@ producer (void * arg)
 				exit (1);
 			}
 			signals++;
-			fprintf (stderr, "%d", signals);
+			fprintf (stderr, "%d\n", signals);
 		}
 
 		rtnval = pthread_mutex_unlock (&buffer_mutex);
@@ -117,13 +118,15 @@ consumer (void * arg)
 
 		printf ("%d\n", item);
 
-		rtnval = pthread_cond_broadcast (&can_produce); //always an interested producer - the one that has the next item
-		if(rtnval != 0) {
-			perror ("signal failed in cons");
-            exit (1);
+		if (buffer[out % BUFFER_SIZE] != item + 1 || count + 1 == BUFFER_SIZE) {
+			rtnval = pthread_cond_broadcast (&can_produce); //always an interested producer - the one that has the next item
+			if(rtnval != 0) {
+				perror ("signal failed in cons");
+				exit (1);
+			}
 		}
 		signals++;
-		fprintf (stderr, "%d", signals);
+		fprintf (stderr, "%d\n", signals);
 
 		rtnval = pthread_mutex_unlock (&buffer_mutex);
 		if(rtnval != 0) {
