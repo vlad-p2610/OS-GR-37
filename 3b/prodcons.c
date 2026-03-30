@@ -34,18 +34,64 @@ int in = 0;			   // how many items put in buffer so far
 int out = 0;		   // how many items pulled out of buffer so far
 int next_expected = 0; // which one should come next ascending order
 static pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER; //protects buffer and the 3 counters
-static pthread_cond_t can_produce = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t can_consume = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t can_produce[NROF_PRODUCERS];
 pthread_t prods[NROF_PRODUCERS];
 pthread_t cons;
 int signals = 0;
+int broadcasts = 0;
+
+static bool consumer_waiting = false;
+static bool producer_waiting[NROF_PRODUCERS] = { false };
+static ITEM waiting_item[NROF_PRODUCERS];
+static int producer_ids[NROF_PRODUCERS];
+
+static void
+signal_consumer_if_needed (void)
+{
+	int rtnval;
+
+	if (consumer_waiting)
+	{
+		rtnval = pthread_cond_signal (&can_consume);
+		if (rtnval != 0) {
+			perror ("signal failed in prod");
+			exit (1);
+		}
+		signals++;
+	}
+}
+
+static void
+signal_next_producer_if_needed (void)
+{
+	int rtnval;
+
+	if (count >= BUFFER_SIZE) {
+		return;
+	}
+
+	for (int i = 0; i < NROF_PRODUCERS; i++) {
+		if (producer_waiting[i] && waiting_item[i] == next_expected) {
+			rtnval = pthread_cond_signal (&can_produce[i]);
+			if (rtnval != 0) {
+				perror ("signal failed in cons");
+				exit (1);
+			}
+			signals++;
+			return;
+		}
+	}
+}
 
 /* producer thread */
 static void * 
 producer (void * arg)
 {	
 	int rtnval;
+	int id = *((int *) arg);
 	ITEM item = get_next_item();
+
     while (item != NROF_ITEMS) /* TODO: not all items produced */
     {
         rsleep (100);	// simulating all kind of activities...
@@ -57,11 +103,16 @@ producer (void * arg)
 		}
 
 		while (count + 1 > BUFFER_SIZE || item != next_expected) {
-			rtnval = pthread_cond_wait (&can_produce, &buffer_mutex);
+			producer_waiting[id] = true;
+			waiting_item[id] = item;
+
+			rtnval = pthread_cond_wait (&can_produce[id], &buffer_mutex);
 			if(rtnval != 0) {
 				perror ("wait failed in prod");
             	exit (1);
 			}
+
+			producer_waiting[id] = false;
 		}
 		
 		buffer[in % BUFFER_SIZE] = item;
@@ -70,14 +121,10 @@ producer (void * arg)
 		count++;
         
 		if (count == 1) { //dont signal uninterested threads - consumer only waiting if buffer was empty
-			rtnval = pthread_cond_signal (&can_consume);
-			if(rtnval != 0) {
-				perror ("signal failed in prod");
-				exit (1);
-			}
-			signals++;
-			fprintf (stderr, "%d", signals);
+			signal_consumer_if_needed();
 		}
+
+		signal_next_producer_if_needed();
 
 		rtnval = pthread_mutex_unlock (&buffer_mutex);
 		if(rtnval != 0) {
@@ -95,6 +142,8 @@ static void *
 consumer (void * arg)
 {
 	int rtnval;
+	(void) arg;
+
     while (out != NROF_ITEMS)/* TODO: not all items retrieved from buffer[] */
     {
 		rtnval = pthread_mutex_lock (&buffer_mutex);
@@ -104,11 +153,15 @@ consumer (void * arg)
 		}
 
 		while (count == 0) {
+			consumer_waiting = true;
+
 			rtnval = pthread_cond_wait (&can_consume, &buffer_mutex);
 			if(rtnval != 0) {
 				perror ("wait failed in cons");
             	exit (1);
 			}
+
+			consumer_waiting = false;
 		}
 
 		ITEM item = buffer[out % BUFFER_SIZE];
@@ -117,13 +170,7 @@ consumer (void * arg)
 
 		printf ("%d\n", item);
 
-		rtnval = pthread_cond_broadcast (&can_produce); //always an interested producer - the one that has the next item
-		if(rtnval != 0) {
-			perror ("signal failed in cons");
-            exit (1);
-		}
-		signals++;
-		fprintf (stderr, "%d", signals);
+		signal_next_producer_if_needed();
 
 		rtnval = pthread_mutex_unlock (&buffer_mutex);
 		if(rtnval != 0) {
@@ -154,6 +201,16 @@ int main (void)
     // * startup the producer threads and the consumer thread
     // * wait until all threads are finished  
 	int rtnval;
+
+	for (int i = 0; i < NROF_PRODUCERS; i++) {
+		producer_ids[i] = i;
+		rtnval = pthread_cond_init (&can_produce[i], NULL);
+		if (rtnval != 0) {
+			perror ("cond init failed");
+			exit (1);
+		}
+	}
+
     rtnval = pthread_create (&cons, NULL, consumer, NULL);
 	if(rtnval != 0) {
 		perror ("create consumer failed");
@@ -161,7 +218,7 @@ int main (void)
 	}
 
 	for (int i = 0; i < NROF_PRODUCERS; i++) {
-		rtnval = pthread_create (&prods[i], NULL, producer, NULL);
+		rtnval = pthread_create (&prods[i], NULL, producer, &producer_ids[i]);
 		if(rtnval != 0) {
 			perror ("create prod failed");
         	exit (1);
@@ -182,6 +239,8 @@ int main (void)
 		perror ("join consumer failed");
         exit (1);
 	}
+
+	fprintf (stderr, "signals=%d broadcasts=%d\n", signals, broadcasts);
 
     return (0);
 }
@@ -277,6 +336,3 @@ get_next_item(void)
 	pthread_mutex_unlock (&job_mutex);
 	return (found);
 }
-
-
-
