@@ -33,7 +33,7 @@ int count = 0;		   // items in buffer
 int in = 0;			   // how many items put in buffer so far
 int out = 0;		   // how many items pulled out of buffer so far
 int next_expected = 0; // which one should come next ascending order
-static buffer_mutex = PTHREAD_MUTEX_INITIALIZER; //protects buffer and the 3 counters
+static pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER; //protects buffer and the 3 counters
 static pthread_cond_t can_produce = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t can_consume = PTHREAD_COND_INITIALIZER;
 pthread_t prods[NROF_PRODUCERS];
@@ -90,8 +90,41 @@ producer (void * arg)
 static void * 
 consumer (void * arg)
 {
-    while (true /* TODO: not all items retrieved from buffer[] */) //vlad: last item printed != NROF_ITEMS - 1
+	int rtnval;
+    while (out != NROF_ITEMS)/* TODO: not all items retrieved from buffer[] */
     {
+		rtnval = pthread_mutex_lock (&buffer_mutex);
+		if(rtnval != 0) {
+			perror ("mutex lock failed in cons");
+            exit (1);
+		}
+
+		while (count == 0) {
+			rtnval = pthread_cond_wait (&can_consume, &buffer_mutex);
+			if(rtnval != 0) {
+				perror ("wait failed in cons");
+            	exit (1);
+			}
+		}
+
+		ITEM item = buffer[out % BUFFER_SIZE];
+		out++;
+		count--;
+
+		printf ("%d\n", item);
+
+		rtnval = pthread_cond_broadcast (&can_produce);
+		if(rtnval != 0) {
+			perror ("signal failed in cons");
+            exit (1);
+		}
+
+		rtnval = pthread_mutex_unlock (&buffer_mutex);
+		if(rtnval != 0) {
+			perror ("mutex unlock failed in cons");
+            exit (1);
+		}
+
         // TODO: 
 	      // * get the next item from buffer[]
 	      // * print the number to stdout
@@ -115,7 +148,7 @@ int main (void)
     // * startup the producer threads and the consumer thread
     // * wait until all threads are finished  
 	int rtnval;
-    rtnval = pthread_create (&cons, NULL, cons, NULL);
+    rtnval = pthread_create (&cons, NULL, consumer, NULL);
 	if(rtnval != 0) {
 		perror ("create consumer failed");
         exit (1);
@@ -129,11 +162,6 @@ int main (void)
 		}
 	}
 
-	rtnval = pthread_join (cons, NULL);
-	if(rtnval != 0) {
-		perror ("join consumer failed");
-        exit (1);
-	}
 
 	for (int i = 0; i < NROF_PRODUCERS; i++) {
 		rtnval = pthread_join (prods[i], NULL);
@@ -141,6 +169,12 @@ int main (void)
 			perror ("join prod failed");
         	exit (1);
 		}
+	}
+
+	rtnval = pthread_join (cons, NULL);
+	if(rtnval != 0) {
+		perror ("join consumer failed");
+        exit (1);
 	}
 
     return (0);
