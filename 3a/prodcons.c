@@ -76,7 +76,7 @@ producer (void * arg)
 				exit (1);
 			}
 			signals++;
-			fprintf (stderr, "%d", signals);
+			fprintf (stderr, "%d\n", signals);
 		}
 
 		rtnval = pthread_mutex_unlock (&buffer_mutex);
@@ -117,13 +117,18 @@ consumer (void * arg)
 
 		printf ("%d\n", item);
 
-		rtnval = pthread_cond_broadcast (&can_produce); //always an interested producer - the one that has the next item
-		if(rtnval != 0) {
-			perror ("signal failed in cons");
-            exit (1);
+		if (buffer[out % BUFFER_SIZE] != item + 1 || count + 1 == BUFFER_SIZE)
+		{ // signal if buffer was
+			// prev full or the next needed item is not pushed
+			rtnval = pthread_cond_broadcast(&can_produce); // always an interested producer - the one that has the next item
+			if (rtnval != 0)
+			{
+				perror("signal failed in cons");
+				exit(1);
+			}
 		}
 		signals++;
-		fprintf (stderr, "%d", signals);
+		fprintf (stderr, "%d\n", signals);
 
 		rtnval = pthread_mutex_unlock (&buffer_mutex);
 		if(rtnval != 0) {
