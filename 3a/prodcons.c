@@ -39,6 +39,7 @@ static pthread_cond_t can_consume = PTHREAD_COND_INITIALIZER;
 pthread_t prods[NROF_PRODUCERS];
 pthread_t cons;
 int signals = 0;
+int broadcasts = 0;
 
 /* producer thread */
 static void * 
@@ -76,7 +77,7 @@ producer (void * arg)
 				exit (1);
 			}
 			signals++;
-			fprintf (stderr, "%d\n", signals);
+			
 		}
 
 		rtnval = pthread_mutex_unlock (&buffer_mutex);
@@ -127,8 +128,8 @@ consumer (void * arg)
 				exit(1);
 			}
 		}
-		signals++;
-		fprintf (stderr, "%d\n", signals);
+		broadcasts++;
+		
 
 		rtnval = pthread_mutex_unlock (&buffer_mutex);
 		if(rtnval != 0) {
@@ -187,6 +188,8 @@ int main (void)
 		perror ("join consumer failed");
         exit (1);
 	}
+
+	fprintf (stderr, "signals=%d broadcasts=%d\n", signals, broadcasts);
 
     return (0);
 }
